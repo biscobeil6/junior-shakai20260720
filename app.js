@@ -199,7 +199,7 @@ function startWrongReview(subject, subtag) {
 function beginSession(questions, meta) {
   if (!questions.length) { toast('出題できる問題がありません'); return; }
   state.rewardDeck = [];
-  state.session = { questions, ...meta, index: 0, answered: 0, correct: 0, pendingNext: false };
+  state.session = { questions, ...meta, index: 0, answered: 0, correct: 0, pendingNext: false, rewardPending: false };
   renderQuestion();
 }
 
@@ -219,8 +219,12 @@ function renderQuestion() {
       ${order.map((c, i) => `<button class="choice-btn" data-index="${c.originalIndex}"><span class="choice-mark">${i+1}</span><span>${escapeHTML(c.text)}</span></button>`).join('')}
     </div>
     <div id="feedback" class="choice-feedback"></div>
+    <div class="quiz-next-row">
+      <button id="nextQuestionBtn" class="primary-btn quiz-next-btn hidden">次へ</button>
+    </div>
   </section>`;
   document.querySelectorAll('.choice-btn').forEach(btn => btn.addEventListener('click', () => answerQuestion(q, Number(btn.dataset.index), btn)));
+  document.getElementById('nextQuestionBtn').addEventListener('click', advanceAfterAnswer);
 }
 
 function answerQuestion(q, selectedIndex, selectedButton) {
@@ -261,11 +265,29 @@ function answerQuestion(q, selectedIndex, selectedButton) {
   }
   saveProgress();
 
-  const shouldReward = s.answered % state.rewards.interval === 0 && state.rewards.images.length;
-  setTimeout(() => {
-    if (shouldReward) showReward();
-    else nextQuestion();
-  }, correct ? 900 : 1500);
+  s.rewardPending = Boolean(
+    s.answered % state.rewards.interval === 0 &&
+    state.rewards.images.length
+  );
+
+  const nextButton = document.getElementById('nextQuestionBtn');
+  nextButton.textContent = s.index >= s.questions.length - 1 ? '結果を見る' : '次へ';
+  nextButton.classList.remove('hidden');
+  nextButton.focus({ preventScroll: true });
+}
+
+function advanceAfterAnswer() {
+  const s = state.session;
+  if (!s || !s.pendingNext) return;
+  const nextButton = document.getElementById('nextQuestionBtn');
+  if (nextButton) nextButton.disabled = true;
+
+  if (s.rewardPending) {
+    s.rewardPending = false;
+    showReward();
+  } else {
+    nextQuestion();
+  }
 }
 
 function nextQuestion() {

@@ -109,3 +109,19 @@ th, td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left
 .danger-outline-btn { min-height: 50px; padding: 10px 18px; border: 1px solid var(--bad); border-radius: 15px; color: var(--bad); background: #fff; font-weight: 800; }
 .result-panel { text-align: center; }
 .result-score { margin: 18px 0 8px; font-size: clamp(52px, 11vw, 92px); font-weight: 900; color: var(--primary); }
+
+.quiz-next-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.quiz-next-btn {
+  min-width: 150px;
+  min-height: 58px;
+  font-size: 20px;
+}
+@media (max-width: 560px) {
+  .quiz-next-btn {
+    width: 100%;
+  }
+}
