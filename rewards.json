@@ -1,0 +1,45 @@
+{
+  "interval": 10,
+  "images": [
+    {
+      "id": "reward_001",
+      "file": "images/reward_001.jpeg",
+      "caption": "10問達成！ひと休み。"
+    },
+    {
+      "id": "reward_002",
+      "file": "images/reward_002.jpeg",
+      "caption": "よく頑張りました。"
+    },
+    {
+      "id": "reward_003",
+      "file": "images/reward_003.jpeg",
+      "caption": "この調子で進みましょう。"
+    },
+    {
+      "id": "reward_004",
+      "file": "images/reward_004.jpeg",
+      "caption": "もうひと息。いい調子です。"
+    },
+    {
+      "id": "reward_005",
+      "file": "images/reward_005.jpeg",
+      "caption": "ここまでしっかり進みました。"
+    },
+    {
+      "id": "reward_006",
+      "file": "images/reward_006.jpeg",
+      "caption": "集中できています。"
+    },
+    {
+      "id": "reward_007",
+      "file": "images/reward_007.jpeg",
+      "caption": "着実に身についています。"
+    },
+    {
+      "id": "reward_008",
+      "file": "images/reward_008.jpeg",
+      "caption": "一区切り。おつかれさまでした。"
+    }
+  ]
+}
