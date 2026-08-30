@@ -1,2 +1,1 @@
-v3.1
-全1206問・全分野書答式 + iPad横向き/Apple Pencil安定化
+v3.2 - iPad handwriting stable / fixed canvas height

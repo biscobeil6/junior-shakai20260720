@@ -12,7 +12,9 @@
   --shadow: 0 10px 30px rgba(36, 46, 78, .10);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; overscroll-behavior: none; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.written-panel, .written-panel * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 .app-shell { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
@@ -177,8 +179,9 @@ th, td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left
   .written-alt { margin: 0 0 4px; font-size: 12px; line-height: 1.25; }
   .learning-point { padding: 7px 10px; font-size: 12px; line-height: 1.35; }
   .hand-canvas-wrap { margin-top: 3px; }
-  .answer-hidden .hand-canvas { height: clamp(220px, 37vh, 285px); min-height: 220px; }
-  .answer-shown .hand-canvas { height: clamp(165px, 24vh, 195px); min-height: 165px; }
+  /* Keep exactly the same handwriting area before/after revealing the answer. */
+  .answer-hidden .hand-canvas,
+  .answer-shown .hand-canvas { height: clamp(210px, 27vh, 225px); min-height: 210px; }
   .canvas-actions { margin-top: 4px; gap: 7px; }
   .canvas-actions .secondary-btn { min-height: 34px; padding: 4px 11px; font-size: 13px; }
   .written-ratings { gap: 8px; margin: 5px 0 2px; }

@@ -348,66 +348,139 @@ function setupHandCanvas() {
   handCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawAllStrokes();
 
+  // This input model mirrors the English app that is already stable on the
+  // user's iPad.  iPad Safari can expose Apple Pencil through Pointer Events,
+  // Touch Events, or both depending on gesture state, so we listen to both and
+  // de-duplicate starts instead of disabling the touch path when PointerEvent
+  // exists.
   let activeSource = null, touchId = null;
-  const pos = e => { const r = handCanvas.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; };
-  const configure = () => { handCtx.strokeStyle='#1f2937'; handCtx.fillStyle='#1f2937'; handCtx.lineWidth=4; handCtx.lineCap='round'; handCtx.lineJoin='round'; };
-  const segment = (a,b) => { configure(); handCtx.beginPath(); handCtx.moveTo(a.x,a.y); handCtx.lineTo(b.x,b.y); handCtx.stroke(); };
-  const dot = p => { configure(); handCtx.beginPath(); handCtx.arc(p.x,p.y,2,0,Math.PI*2); handCtx.fill(); };
-  const batch = e => typeof e.getCoalescedEvents==='function' && e.getCoalescedEvents()?.length ? e.getCoalescedEvents() : [e];
+  let lastStart = { time: -Infinity, x: 0, y: 0, source: null };
+  const pos = e => {
+    const r = handCanvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 12;
+  const eventPoint = e => ({ x: e.clientX, y: e.clientY });
+  const configure = () => {
+    handCtx.strokeStyle = '#1f2937';
+    handCtx.fillStyle = '#1f2937';
+    handCtx.lineWidth = 4;
+    handCtx.lineCap = 'round';
+    handCtx.lineJoin = 'round';
+  };
+  const segment = (a, b) => {
+    configure();
+    handCtx.beginPath();
+    handCtx.moveTo(a.x, a.y);
+    handCtx.lineTo(b.x, b.y);
+    handCtx.stroke();
+  };
+  const dot = p => {
+    configure();
+    handCtx.beginPath();
+    handCtx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+    handCtx.fill();
+  };
+  const batch = e => typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents()?.length
+    ? e.getCoalescedEvents() : [e];
   const append = e => {
     if (!currentStroke) return;
     for (const ev of batch(e)) {
-      const p=pos(ev);
-      if (!lastPoint) { currentStroke.push(p); lastPoint=p; dot(p); continue; }
-      if (Math.abs(p.x-lastPoint.x)<.05 && Math.abs(p.y-lastPoint.y)<.05) continue;
-      currentStroke.push(p); segment(lastPoint,p); lastPoint=p;
+      const p = pos(ev);
+      if (!lastPoint) {
+        currentStroke.push(p); lastPoint = p; dot(p); continue;
+      }
+      if (Math.abs(p.x - lastPoint.x) < .05 && Math.abs(p.y - lastPoint.y) < .05) continue;
+      currentStroke.push(p); segment(lastPoint, p); lastPoint = p;
     }
   };
-  const reset = () => { activePointerId=null; currentStroke=null; lastPoint=null; };
-  const begin = e => { reset(); activePointerId=e.pointerId; currentStroke=[]; strokes.push(currentStroke); append(e); document.querySelector('.canvas-hint')?.remove(); };
-  const finish = e => { if (activePointerId===null || !currentStroke) return; if (e?.pointerId!==undefined && e.pointerId!==activePointerId) return; if (e?.type==='pointerup') append(e); reset(); };
+  const reset = () => { activePointerId = null; currentStroke = null; lastPoint = null; };
+  const begin = e => {
+    reset();
+    activePointerId = e.pointerId;
+    currentStroke = [];
+    strokes.push(currentStroke);
+    append(e);
+    document.querySelector('.canvas-hint')?.remove();
+  };
+  const finish = e => {
+    if (activePointerId === null || !currentStroke) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+    if (e?.type === 'pointerup') append(e);
+    reset();
+  };
+  const duplicate = (source, e) => {
+    const now = performance.now(), p = eventPoint(e);
+    const dup = source !== lastStart.source && now - lastStart.time < 120 && near(p, lastStart);
+    if (!dup) lastStart = { time: now, x: p.x, y: p.y, source };
+    return dup;
+  };
 
-  // iPad/Safari: keep handwriting gestures inside the canvas and suppress
-  // text selection / callout / drag gestures (the floating "コピー" menu).
-  handCanvas.oncontextmenu=e=>e.preventDefault();
-  for (const ev of ['selectstart','dragstart','gesturestart']) {
-    handCanvas.addEventListener(ev, e => e.preventDefault(), {passive:false});
+  // Suppress Safari text selection / callouts that can steal Pencil strokes.
+  handCanvas.oncontextmenu = e => e.preventDefault();
+  for (const ev of ['selectstart', 'dragstart', 'gesturestart']) {
+    handCanvas.addEventListener(ev, e => e.preventDefault(), { passive: false });
   }
+
   if ('PointerEvent' in window) {
     handCanvas.addEventListener('pointerdown', e => {
       e.preventDefault();
-      activeSource='pointer';
-      try { handCanvas.setPointerCapture?.(e.pointerId); } catch (_) {}
+      if (duplicate('pointer', e)) return;
+      activeSource = 'pointer';
       begin(e);
-    }, {passive:false});
-    for (const ev of ['pointermove','pointerrawupdate']) handCanvas.addEventListener(ev, e => {
-      if (activeSource==='touch') return;
-      if ((activePointerId===null || !currentStroke) && e.pointerType==='pen' && (e.pressure>0 || e.buttons!==0)) begin(e);
-      if (e.pointerId!==activePointerId || !currentStroke) return;
-      e.preventDefault(); append(e);
-    }, {passive:false});
-    for (const ev of ['pointerup','pointercancel']) handCanvas.addEventListener(ev, e => {
-      if (activeSource!=='pointer') return;
-      e.preventDefault();
-      finish(e);
-      try { if (handCanvas.hasPointerCapture?.(e.pointerId)) handCanvas.releasePointerCapture?.(e.pointerId); } catch (_) {}
-      activeSource=null;
-    }, {passive:false});
-    handCanvas.addEventListener('lostpointercapture', () => {
-      if (activeSource==='pointer') { reset(); activeSource=null; }
-    });
+    }, { passive: false });
+    for (const ev of ['pointermove', 'pointerrawupdate']) {
+      handCanvas.addEventListener(ev, e => {
+        if (activeSource === 'touch') return;
+        if ((activePointerId === null || !currentStroke) && e.pointerType === 'pen' && (e.pressure > 0 || e.buttons !== 0)) begin(e);
+        if (e.pointerId !== activePointerId || !currentStroke) return;
+        e.preventDefault();
+        append(e);
+      }, { passive: false });
+    }
+    for (const ev of ['pointerup', 'pointercancel']) {
+      handCanvas.addEventListener(ev, e => {
+        if (activeSource !== 'pointer') return;
+        e.preventDefault();
+        finish(e);
+        activeSource = null;
+      }, { passive: false });
+    }
   }
-  if (!('PointerEvent' in window)) {
-    const findTouch=(list,id)=>Array.from(list||[]).find(t=>t.identifier===id);
-    handCanvas.addEventListener('touchstart', e => {
-      const t=e.changedTouches?.[0]; if(!t) return; e.preventDefault(); activeSource='touch'; touchId=t.identifier;
-      begin({pointerId:`t-${t.identifier}`,clientX:t.clientX,clientY:t.clientY});
-    }, {passive:false});
-    handCanvas.addEventListener('touchmove', e => {
-      if(activeSource!=='touch'||touchId===null)return; const t=findTouch(e.changedTouches,touchId)||findTouch(e.touches,touchId); if(!t)return;
-      e.preventDefault(); append({pointerId:`t-${touchId}`,clientX:t.clientX,clientY:t.clientY});
-    }, {passive:false});
-    for (const ev of ['touchend','touchcancel']) handCanvas.addEventListener(ev, e => { if(activeSource!=='touch')return; e.preventDefault(); finish({pointerId:`t-${touchId}`}); touchId=null; activeSource=null; }, {passive:false});
+
+  const findTouch = (list, id) => Array.from(list || []).find(t => t.identifier === id);
+  handCanvas.addEventListener('touchstart', e => {
+    const t = e.changedTouches?.[0];
+    if (!t) return;
+    e.preventDefault();
+    const synthetic = {
+      pointerId: `t-${t.identifier}`,
+      pointerType: t.touchType === 'stylus' ? 'pen' : 'touch',
+      pressure: t.force || 1,
+      buttons: 1,
+      clientX: t.clientX,
+      clientY: t.clientY
+    };
+    if (duplicate('touch', synthetic)) return;
+    activeSource = 'touch';
+    touchId = t.identifier;
+    begin(synthetic);
+  }, { passive: false });
+  handCanvas.addEventListener('touchmove', e => {
+    if (activeSource !== 'touch' || touchId === null) return;
+    const t = findTouch(e.changedTouches, touchId) || findTouch(e.touches, touchId);
+    if (!t) return;
+    e.preventDefault();
+    append({ pointerId: `t-${touchId}`, clientX: t.clientX, clientY: t.clientY });
+  }, { passive: false });
+  for (const ev of ['touchend', 'touchcancel']) {
+    handCanvas.addEventListener(ev, e => {
+      if (activeSource !== 'touch') return;
+      e.preventDefault();
+      finish({ pointerId: `t-${touchId}` });
+      touchId = null;
+      activeSource = null;
+    }, { passive: false });
   }
 }
 
