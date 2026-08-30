@@ -251,7 +251,7 @@ function renderWrittenQuestion(q) {
   if (q.subcategory) metaParts.push(q.subcategory);
   if (q.time_dependent === 'あり' && q.baseline_date) metaParts.push(`基準時点 ${q.baseline_date}`);
   const meta = metaParts.filter(Boolean).join(' ・ ');
-  main.innerHTML = `<section class="panel written-panel">
+  main.innerHTML = `<section class="panel written-panel ${s.answerShown ? 'answer-shown' : 'answer-hidden'}">
     <div class="quiz-top">
       <div class="progress-track"><span style="width:${Math.round((s.index/s.questions.length)*100)}%"></span></div>
       <span class="muted">○ ${s.correct}</span>
@@ -367,16 +367,35 @@ function setupHandCanvas() {
   const begin = e => { reset(); activePointerId=e.pointerId; currentStroke=[]; strokes.push(currentStroke); append(e); document.querySelector('.canvas-hint')?.remove(); };
   const finish = e => { if (activePointerId===null || !currentStroke) return; if (e?.pointerId!==undefined && e.pointerId!==activePointerId) return; if (e?.type==='pointerup') append(e); reset(); };
 
+  // iPad/Safari: keep handwriting gestures inside the canvas and suppress
+  // text selection / callout / drag gestures (the floating "コピー" menu).
   handCanvas.oncontextmenu=e=>e.preventDefault();
+  for (const ev of ['selectstart','dragstart','gesturestart']) {
+    handCanvas.addEventListener(ev, e => e.preventDefault(), {passive:false});
+  }
   if ('PointerEvent' in window) {
-    handCanvas.addEventListener('pointerdown', e => { e.preventDefault(); activeSource='pointer'; begin(e); }, {passive:false});
+    handCanvas.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      activeSource='pointer';
+      try { handCanvas.setPointerCapture?.(e.pointerId); } catch (_) {}
+      begin(e);
+    }, {passive:false});
     for (const ev of ['pointermove','pointerrawupdate']) handCanvas.addEventListener(ev, e => {
       if (activeSource==='touch') return;
       if ((activePointerId===null || !currentStroke) && e.pointerType==='pen' && (e.pressure>0 || e.buttons!==0)) begin(e);
       if (e.pointerId!==activePointerId || !currentStroke) return;
       e.preventDefault(); append(e);
     }, {passive:false});
-    for (const ev of ['pointerup','pointercancel']) handCanvas.addEventListener(ev, e => { if (activeSource!=='pointer') return; e.preventDefault(); finish(e); activeSource=null; }, {passive:false});
+    for (const ev of ['pointerup','pointercancel']) handCanvas.addEventListener(ev, e => {
+      if (activeSource!=='pointer') return;
+      e.preventDefault();
+      finish(e);
+      try { if (handCanvas.hasPointerCapture?.(e.pointerId)) handCanvas.releasePointerCapture?.(e.pointerId); } catch (_) {}
+      activeSource=null;
+    }, {passive:false});
+    handCanvas.addEventListener('lostpointercapture', () => {
+      if (activeSource==='pointer') { reset(); activeSource=null; }
+    });
   }
   if (!('PointerEvent' in window)) {
     const findTouch=(list,id)=>Array.from(list||[]).find(t=>t.identifier===id);
