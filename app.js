@@ -44,15 +44,30 @@ async function loadQuestions() {
   const seen = new Set();
   for (const [index, q] of raw.questions.entries()) {
     const prefix = `${index + 1}番目`;
-    if (!q || !q.id || !q.subject || !q.subtag || !q.question || !Array.isArray(q.choices)) {
+    if (!q || !q.id || !q.subject || !q.subtag || !q.question) {
       state.issues.push(`${prefix}: 必須項目不足`); continue;
     }
     if (seen.has(q.id)) { state.issues.push(`${prefix}: ID重複 ${q.id}`); continue; }
     seen.add(q.id);
-    if (q.choices.length < 2 || !Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.choices.length) {
-      state.issues.push(`${prefix}: 選択肢または正解番号が不正`); continue;
+
+    const isWritten = q.mode === 'written';
+    let normalized;
+    if (isWritten) {
+      if (typeof q.answer !== 'string' || !q.answer.trim() || !q.learning_point) {
+        state.issues.push(`${prefix}: 書答式の正答または学習ポイントが不正`); continue;
+      }
+      normalized = {
+        ...q,
+        alternatives: Array.isArray(q.alternatives) ? q.alternatives : [],
+        answerText: q.answer
+      };
+    } else {
+      if (!Array.isArray(q.choices) || q.choices.length < 2 || !Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.choices.length) {
+        state.issues.push(`${prefix}: 選択肢または正解番号が不正`); continue;
+      }
+      normalized = { ...q, mode: 'choice', answerText: q.choices[q.answer] };
     }
-    const normalized = { ...q, answerText: q.choices[q.answer] };
+
     state.data.push(normalized);
     if (!state.bySubject.has(q.subject)) state.bySubject.set(q.subject, new Map());
     const subMap = state.bySubject.get(q.subject);
@@ -77,7 +92,7 @@ function renderHome() {
   state.session = null;
   state.selectedSubject = null;
   state.selectedSubtag = null;
-  setHeader('受験暗記アプリ', '社会・周回学習');
+  setHeader('中3社会 書答式', '全1,206問・周回学習');
   main.innerHTML = `
     <section class="hero">
       <div class="settings-row">1回に解く問題数
@@ -111,7 +126,7 @@ function renderSubtags(subject) {
   state.selectedSubject = subject;
   const subMap = state.bySubject.get(subject);
   setHeader(subject, '単元を選んでください');
-  const allLabel = subject === '歴史' ? '全時代' : subject === '地理' ? '全単元' : '全分野';
+  const allLabel = subject === '都道府県特訓' ? '全特訓' : '全単元';
   main.innerHTML = `<section class="subject-group">
     <div class="tile-grid">
       <article class="unit-tile featured" data-subtag="__ALL__">
@@ -199,7 +214,8 @@ function startWrongReview(subject, subtag) {
 function beginSession(questions, meta) {
   if (!questions.length) { toast('出題できる問題がありません'); return; }
   state.rewardDeck = [];
-  state.session = { questions, ...meta, index: 0, answered: 0, correct: 0, pendingNext: false, rewardPending: false };
+  state.session = { questions, ...meta, index: 0, answered: 0, correct: 0, pendingNext: false, rewardPending: false, answerShown: false, pendingRating: null };
+  strokes = [];
   renderQuestion();
 }
 
@@ -208,6 +224,7 @@ function renderQuestion() {
   if (!s || s.index >= s.questions.length) return renderResult();
   const q = s.questions[s.index];
   setHeader(s.title, `${s.index + 1}/${s.questions.length}`);
+  if (q.mode === 'written') return renderWrittenQuestion(q);
   const order = shuffle(q.choices.map((text, originalIndex) => ({ text, originalIndex })));
   main.innerHTML = `<section class="panel">
     <div class="quiz-top">
@@ -225,6 +242,176 @@ function renderQuestion() {
   </section>`;
   document.querySelectorAll('.choice-btn').forEach(btn => btn.addEventListener('click', () => answerQuestion(q, Number(btn.dataset.index), btn)));
   document.getElementById('nextQuestionBtn').addEventListener('click', advanceAfterAnswer);
+}
+
+function renderWrittenQuestion(q) {
+  const s = state.session;
+  const alt = q.alternatives?.length ? `<div class="written-alt"><span>別解</span>${q.alternatives.map(escapeHTML).join(' ／ ')}</div>` : '';
+  const metaParts = [q.answer_format, q.importance ? `重要度${q.importance}` : ''];
+  if (q.subcategory) metaParts.push(q.subcategory);
+  if (q.time_dependent === 'あり' && q.baseline_date) metaParts.push(`基準時点 ${q.baseline_date}`);
+  const meta = metaParts.filter(Boolean).join(' ・ ');
+  main.innerHTML = `<section class="panel written-panel">
+    <div class="quiz-top">
+      <div class="progress-track"><span style="width:${Math.round((s.index/s.questions.length)*100)}%"></span></div>
+      <span class="muted">○ ${s.correct}</span>
+    </div>
+    <div class="written-meta">${escapeHTML(meta)}</div>
+    <div class="question written-question">${escapeHTML(q.question)}</div>
+    ${s.answerShown ? `<div class="written-answer-block">
+      <div class="written-answer-label">正答</div>
+      <div class="written-answer">${escapeHTML(q.answerText)}</div>
+      ${alt}
+      <div class="learning-point"><span>学習ポイント</span>${escapeHTML(q.learning_point || '')}</div>
+    </div>` : ''}
+    <div class="hand-canvas-wrap">
+      <canvas id="handCanvas" class="hand-canvas"></canvas>
+      ${strokes.length ? '' : '<div class="canvas-hint">ここに手書きします</div>'}
+    </div>
+    <div class="canvas-actions">
+      <button class="secondary-btn" id="undoStrokeBtn">一つ戻す</button>
+      <button class="secondary-btn" id="clearCanvasBtn">全消去</button>
+    </div>
+    ${s.answerShown ? `<div class="written-ratings">
+      <button data-rating="circle" class="judge-good ${s.pendingRating==='circle'?'selected':''}">○<small>できた</small></button>
+      <button data-rating="triangle" class="judge-mid ${s.pendingRating==='triangle'?'selected':''}">△<small>迷った</small></button>
+      <button data-rating="cross" class="judge-bad ${s.pendingRating==='cross'?'selected':''}">×<small>書けなかった</small></button>
+    </div>
+    <div class="quiz-next-row"><button id="writtenNextBtn" class="primary-btn quiz-next-btn" ${s.pendingRating?'':'disabled'}>${s.index >= s.questions.length - 1 ? '結果を見る' : '次へ'}</button></div>`
+    : `<button id="showWrittenAnswerBtn" class="primary-btn written-answer-btn">答えを確認</button>`}
+  </section>`;
+
+  document.getElementById('undoStrokeBtn').onclick = undoStroke;
+  document.getElementById('clearCanvasBtn').onclick = clearCanvas;
+  if (!s.answerShown) {
+    document.getElementById('showWrittenAnswerBtn').onclick = () => {
+      s.answerShown = true;
+      s.pendingRating = null;
+      renderQuestion();
+    };
+  } else {
+    document.querySelectorAll('[data-rating]').forEach(btn => btn.onclick = () => {
+      s.pendingRating = btn.dataset.rating;
+      renderQuestion();
+    });
+    document.getElementById('writtenNextBtn').onclick = commitWrittenAnswer;
+  }
+  setupHandCanvas();
+}
+
+function commitWrittenAnswer() {
+  const s = state.session;
+  if (!s || !s.pendingRating || s.pendingNext) return;
+  const q = s.questions[s.index];
+  s.pendingNext = true;
+  const correct = s.pendingRating === 'circle';
+  s.answered++;
+  if (correct) s.correct++;
+
+  const prev = state.progress.results[q.id] || { attempts: 0, correctCount: 0 };
+  state.progress.results[q.id] = {
+    attempts: prev.attempts + 1,
+    correctCount: prev.correctCount + (correct ? 1 : 0),
+    lastCorrect: correct,
+    lastRating: s.pendingRating,
+    lastAnsweredAt: new Date().toISOString()
+  };
+  if (s.mode === 'cycle') {
+    const cycle = getCycle(s.subject, s.subtag);
+    if (!cycle.doneIds.includes(q.id)) cycle.doneIds.push(q.id);
+  }
+  saveProgress();
+
+  s.rewardPending = Boolean(
+    s.answered % state.rewards.interval === 0 &&
+    state.rewards.images.length
+  );
+
+  if (s.rewardPending) {
+    s.rewardPending = false;
+    showReward();
+  } else {
+    nextQuestion();
+  }
+}
+
+let strokes = [], currentStroke = null, handCtx = null, handCanvas = null, activePointerId = null, lastPoint = null;
+
+function setupHandCanvas() {
+  handCanvas = document.getElementById('handCanvas');
+  if (!handCanvas) return;
+  const rect = handCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  handCanvas.width = Math.max(1, Math.round(rect.width * dpr));
+  handCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+  handCtx = handCanvas.getContext('2d', { alpha: true, desynchronized: true });
+  handCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawAllStrokes();
+
+  let activeSource = null, touchId = null;
+  const pos = e => { const r = handCanvas.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; };
+  const configure = () => { handCtx.strokeStyle='#1f2937'; handCtx.fillStyle='#1f2937'; handCtx.lineWidth=4; handCtx.lineCap='round'; handCtx.lineJoin='round'; };
+  const segment = (a,b) => { configure(); handCtx.beginPath(); handCtx.moveTo(a.x,a.y); handCtx.lineTo(b.x,b.y); handCtx.stroke(); };
+  const dot = p => { configure(); handCtx.beginPath(); handCtx.arc(p.x,p.y,2,0,Math.PI*2); handCtx.fill(); };
+  const batch = e => typeof e.getCoalescedEvents==='function' && e.getCoalescedEvents()?.length ? e.getCoalescedEvents() : [e];
+  const append = e => {
+    if (!currentStroke) return;
+    for (const ev of batch(e)) {
+      const p=pos(ev);
+      if (!lastPoint) { currentStroke.push(p); lastPoint=p; dot(p); continue; }
+      if (Math.abs(p.x-lastPoint.x)<.05 && Math.abs(p.y-lastPoint.y)<.05) continue;
+      currentStroke.push(p); segment(lastPoint,p); lastPoint=p;
+    }
+  };
+  const reset = () => { activePointerId=null; currentStroke=null; lastPoint=null; };
+  const begin = e => { reset(); activePointerId=e.pointerId; currentStroke=[]; strokes.push(currentStroke); append(e); document.querySelector('.canvas-hint')?.remove(); };
+  const finish = e => { if (activePointerId===null || !currentStroke) return; if (e?.pointerId!==undefined && e.pointerId!==activePointerId) return; if (e?.type==='pointerup') append(e); reset(); };
+
+  handCanvas.oncontextmenu=e=>e.preventDefault();
+  if ('PointerEvent' in window) {
+    handCanvas.addEventListener('pointerdown', e => { e.preventDefault(); activeSource='pointer'; begin(e); }, {passive:false});
+    for (const ev of ['pointermove','pointerrawupdate']) handCanvas.addEventListener(ev, e => {
+      if (activeSource==='touch') return;
+      if ((activePointerId===null || !currentStroke) && e.pointerType==='pen' && (e.pressure>0 || e.buttons!==0)) begin(e);
+      if (e.pointerId!==activePointerId || !currentStroke) return;
+      e.preventDefault(); append(e);
+    }, {passive:false});
+    for (const ev of ['pointerup','pointercancel']) handCanvas.addEventListener(ev, e => { if (activeSource!=='pointer') return; e.preventDefault(); finish(e); activeSource=null; }, {passive:false});
+  }
+  if (!('PointerEvent' in window)) {
+    const findTouch=(list,id)=>Array.from(list||[]).find(t=>t.identifier===id);
+    handCanvas.addEventListener('touchstart', e => {
+      const t=e.changedTouches?.[0]; if(!t) return; e.preventDefault(); activeSource='touch'; touchId=t.identifier;
+      begin({pointerId:`t-${t.identifier}`,clientX:t.clientX,clientY:t.clientY});
+    }, {passive:false});
+    handCanvas.addEventListener('touchmove', e => {
+      if(activeSource!=='touch'||touchId===null)return; const t=findTouch(e.changedTouches,touchId)||findTouch(e.touches,touchId); if(!t)return;
+      e.preventDefault(); append({pointerId:`t-${touchId}`,clientX:t.clientX,clientY:t.clientY});
+    }, {passive:false});
+    for (const ev of ['touchend','touchcancel']) handCanvas.addEventListener(ev, e => { if(activeSource!=='touch')return; e.preventDefault(); finish({pointerId:`t-${touchId}`}); touchId=null; activeSource=null; }, {passive:false});
+  }
+}
+
+function drawAllStrokes() {
+  if (!handCtx || !handCanvas) return;
+  const r=handCanvas.getBoundingClientRect();
+  handCtx.clearRect(0,0,r.width,r.height);
+  handCtx.strokeStyle='#1f2937'; handCtx.fillStyle='#1f2937'; handCtx.lineWidth=4; handCtx.lineCap='round'; handCtx.lineJoin='round';
+  for (const stroke of strokes) {
+    if (!stroke.length) continue;
+    if (stroke.length===1) { handCtx.beginPath(); handCtx.arc(stroke[0].x,stroke[0].y,2,0,Math.PI*2); handCtx.fill(); continue; }
+    handCtx.beginPath(); handCtx.moveTo(stroke[0].x,stroke[0].y);
+    for (const p of stroke.slice(1)) handCtx.lineTo(p.x,p.y);
+    handCtx.stroke();
+  }
+}
+function undoStroke() { strokes.pop(); drawAllStrokes(); }
+function clearCanvas() {
+  strokes=[]; drawAllStrokes();
+  if (!document.querySelector('.canvas-hint')) {
+    const hint=document.createElement('div'); hint.className='canvas-hint'; hint.textContent='ここに手書きします';
+    document.querySelector('.hand-canvas-wrap')?.appendChild(hint);
+  }
 }
 
 function answerQuestion(q, selectedIndex, selectedButton) {
@@ -294,6 +481,9 @@ function nextQuestion() {
   if (!state.session) return;
   state.session.index++;
   state.session.pendingNext = false;
+  state.session.answerShown = false;
+  state.session.pendingRating = null;
+  strokes = [];
   renderQuestion();
 }
 
@@ -305,9 +495,10 @@ function renderResult() {
   const total = scopeQuestions(s.subject, s.subtag).length;
   const done = cycle.doneIds.filter(id => scopeQuestions(s.subject, s.subtag).some(q => q.id === id)).length;
   setHeader('今回の結果', s.title);
+  const writtenSession = s.questions.every(q => q.mode === 'written');
   main.innerHTML = `<section class="panel result-panel">
     <div class="result-score">${s.correct} / ${s.questions.length}</div>
-    <p>正答率 ${Math.round((s.correct/s.questions.length)*100)}%</p>
+    <p>${writtenSession ? '○（できた）率' : '正答率'} ${Math.round((s.correct/s.questions.length)*100)}%</p>
     ${s.mode === 'cycle' ? `<p>現在の周回：${done}/${total}問</p>` : `<p>残っている間違い：${wrongNow}問</p>`}
     <div class="button-row">
       <button class="primary-btn" id="continueMode">同じモードを続ける</button>
@@ -327,10 +518,10 @@ function renderStats() {
   main.innerHTML = `<section class="stats-grid">
     <section class="panel">
       <h2>全体</h2>
-      <p>回答回数：${attempts}</p>
-      <p>正解回数：${correct}</p>
-      <p>現在の間違い：${wrong}問</p>
-      <p>通算正答率：${attempts ? Math.round(correct/attempts*100) : 0}%</p>
+      <p>自己採点回数：${attempts}</p>
+      <p>○（できた）：${correct}</p>
+      <p>現在の要復習（△・×）：${wrong}問</p>
+      <p>通算○率：${attempts ? Math.round(correct/attempts*100) : 0}%</p>
     </section>
     <section class="panel">
       <h2>成績リセット</h2>
@@ -399,7 +590,7 @@ function cycleSummary(subject, subtag) {
 }
 function scopeLabel(subject, subtag) {
   if (subtag !== '__ALL__') return subtag;
-  return subject === '歴史' ? '全時代' : subject === '地理' ? '全単元' : '全分野';
+  return subject === '都道府県特訓' ? '全特訓' : '全単元';
 }
 function saveProgress() { saveJSON(STORAGE_KEY, state.progress); }
 function setHeader(title, sub) { headerTitle.textContent = title; headerSub.textContent = sub; }

@@ -125,3 +125,37 @@ th, td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left
     width: 100%;
   }
 }
+
+
+/* History written-answer mode (v2.2) */
+.written-panel { padding-top: 14px; padding-bottom: 14px; }
+.written-meta { margin: 0 0 4px; color: var(--muted); font-size: 13px; font-weight: 800; }
+.written-question { margin: 8px 0 10px; font-size: clamp(20px, 3.4vw, 29px); line-height: 1.45; }
+.written-answer-block { margin: 4px 0 8px; }
+.written-answer-label { color: var(--muted); font-size: 12px; font-weight: 800; text-align: center; }
+.written-answer { padding: 2px 8px 4px; color: #d12626; font-family: "UD Digi Kyokasho NK-R", "YuKyokasho", "Hiragino Sans", sans-serif; font-size: clamp(24px, 4.8vw, 38px); line-height: 1.35; font-weight: 900; text-align: center; overflow-wrap: anywhere; }
+.written-alt { margin: 2px 0 6px; color: #5f6672; font-size: 14px; line-height: 1.45; text-align: center; }
+.written-alt span { margin-right: 7px; color: var(--muted); font-size: 11px; font-weight: 800; }
+.learning-point { margin: 4px 0 8px; padding: 8px 11px; border: 1px solid #dde2e9; border-radius: 10px; color: #4f5968; background: #f3f5f8; font-size: 14px; line-height: 1.5; }
+.learning-point span { display: block; margin-bottom: 2px; color: var(--muted); font-size: 11px; font-weight: 900; }
+.hand-canvas-wrap { position: relative; margin-top: 5px; }
+.hand-canvas { width: 100%; height: clamp(205px, 31vh, 270px); display: block; border: 2px solid #8993a3; border-radius: 14px; background: #fff; touch-action: none; -webkit-user-select: none; user-select: none; }
+.canvas-hint { position: absolute; inset: 0; display: grid; place-items: center; color: #b4bac4; pointer-events: none; font-size: 16px; }
+.canvas-actions { margin-top: 6px; }
+.canvas-actions .secondary-btn { min-height: 42px; padding: 7px 13px; }
+.written-answer-btn { width: 100%; margin-top: 8px; }
+.written-ratings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin: 8px 0 4px; }
+.written-ratings button { min-height: 58px; border: 0; border-radius: 16px; font-size: 25px; font-weight: 900; opacity: .78; }
+.written-ratings button.selected { outline: 3px solid #33445f; opacity: 1; transform: translateY(-1px); }
+.written-ratings small { display: block; margin-top: 1px; font-size: 11px; font-weight: 700; }
+.written-ratings .judge-good { color: #fff; background: var(--ok); }
+.written-ratings .judge-mid { color: #fff; background: var(--warn); }
+.written-ratings .judge-bad { color: #fff; background: var(--bad); }
+.written-panel .quiz-next-row { margin-top: 6px; }
+.written-panel .quiz-next-btn { min-height: 46px; }
+@media (max-width:560px) {
+  .written-panel { padding: 12px; }
+  .written-question { margin-top: 5px; margin-bottom: 7px; }
+  .hand-canvas { height: clamp(205px, 35vh, 255px); min-height:205px; }
+  .written-ratings button { min-height: 55px; padding: 5px; }
+}
